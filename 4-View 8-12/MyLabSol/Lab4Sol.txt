@@ -1,0 +1,261 @@
+/////////////////EX1:Write in TSQL the following views//////////////////////////////////////////////////////////////////
+
+/*(a) A view that gets for each instructor the total number of teaching hours.*/
+--so bdi 23mal join between inst and course then we display instNo,Name,TotalNbHours
+
+--With specifiying the columns as parameters
+CREATE VIEW instructor_total_hours(instId,TotalHours)
+AS
+	SELECT I.InstNo, SUM(C.nbHours)
+	FROM Instructor I,Course C
+	WHERE I.InstNo=C.InstNo
+	GROUP BY I.InstNo
+
+--Without using cols name as param 
+CREATE VIEW instructor_total_hours_v2
+AS
+	SELECT I.InstNo, SUM(C.nbHours) AS TotalHours
+	FROM Instructor I,Course C
+	WHERE I.InstNo=C.InstNo
+	GROUP BY I.InstNo
+
+--Getting Data From View
+--v1:
+SELECT instId,TotalHours
+FROM instructor_total_hours
+--v2:
+SELECT InstNo, TotalHours
+FROM instructor_total_hours_v2
+
+
+
+
+/*(b) A view that for each student lists the name, the enrolled courses and the mark of each course.*/
+
+/*Example:
+Ali Chueib  Flutter  100
+Ali Chuieb  React  98
+*/
+
+--Declaring View:
+CREATE VIEW studentDisplay(st_name,c_name,c_grade)
+AS
+	(
+	SELECT S.StudentNo,C.Title,T.Grade
+	FROM Student S, Take T, Course C
+	WHERE S.StudentNo=T.StudentNo AND T.CourseNo=C.CourseNo
+	)
+
+--Getting Data from View:
+SELECT *
+FROM studentDisplay
+
+
+
+--(c) A view that gets the succeeded students
+--Declaring View:
+CREATE VIEW succeededStudents(st_id,st_name,st_avg_grade)
+AS
+	(
+	SELECT S.StudentNo,S.Name,AVG(T.Grade) 
+	FROM Student S,Take T
+	WHERE S.StudentNo=T.StudentNo
+	GROUP BY S.StudentNo,S.Name
+	HAVING AVG(T.Grade) >= 50
+	)
+
+--Getting data from view
+SELECT *
+FROM succeededStudents
+
+
+
+
+/*(d)
+A view that gets for each student, the name and the grade average according to the following rules :
+— if average(grade) BETWEEN 0 AND 25, the grade should be ’D’
+— if average(grade) BETWEEN 26 AND 50, the grade should be ’C’
+— if average(grade) BETWEEN 51 AND 75, the grade should be ’B’
+— if average(grade) BETWEEN 76 AND 100, the grade should be ’A’
+*/
+
+--Declaring View:
+CREATE VIEW studentsABCD 
+AS
+	(
+		SELECT S.Name AS 'StName', 'Grade'=
+		CASE 
+			WHEN AVG(T.Grade) BETWEEN 0 AND 25 THEN 'D'
+			WHEN AVG(T.Grade) BETWEEN 26 AND 50 THEN 'C'
+			WHEN AVG(T.Grade) BETWEEN 51 AND 75 THEN 'B'
+			WHEN AVG(T.Grade) BETWEEN 76 AND 100 THEN 'A'
+			ELSE 'No Grades'
+		END
+		FROM Student S,Take T
+		WHERE S.StudentNo=T.StudentNo
+		GROUP BY S.Name
+	)
+
+--Getting Data From View:
+SELECT *
+FROM studentsABCD
+
+--Deleting View for debugging 
+DROP VIEW studentsABCD
+
+
+
+/*(e) A view that finds for each course how many students passed it*/
+--this is super clear
+/*
+CourseName				Enrolled Students						Succeeded Students
+Flutter							54										48
+C.title				Count(*) Group BY CourseNo				Count(CASE THEN StudentNo)...Group...
+*/
+
+--Declaring View:
+CREATE VIEW courseSucceeded
+AS
+	(
+
+	SELECT  C.CourseNo,
+		COUNT(DISTINCT T.StudentNo) AS Enrolled,
+		COUNT(DISTINCT CASE WHEN T.Grade >=50 THEN T.StudentNo END) AS Succeeded
+	FROM Take T, Course C
+	WHERE T.CourseNo=C.CourseNo 
+	GROUP BY C.CourseNo
+
+--Running View:	
+SELECT *
+FROM courseSucceeded
+
+
+
+
+
+
+
+------------------------Ex2--------------------------------------------------------------
+/*(a) A query that gets the student(s) (id, name, mark average) who has the highest grade
+average*/
+
+WITH studentGrade(st_id,st_grade)
+AS	
+	(
+	SELECT T.StudentNo, AVG(T.Grade)
+	FROM Take T
+	GROUP BY T.StudentNo
+	),
+maxGrade(st_max_grade)
+AS	
+	(
+	SELECT MAX(st_grade) 
+	FROM studentGrade
+	)
+
+SELECT st_id, S.Name, st_max_grade as 'Student Average'
+FROM Student S,studentGrade,maxGrade
+WHERE S.StudentNo=studentGrade.st_id AND studentGrade.st_grade = maxGrade.st_max_grade
+
+
+
+/*(b) A query that gets the courses (student’s name, title, grade) of the student who has the
+highest grade average*/
+
+--First let's get all students avg grade
+WITH studentsAvg(st_id,avg_val)
+AS
+	(
+	SELECT StudentNo,AVG(Grade)
+	FROM Take 
+	GROUP BY StudentNo
+	),
+--Second lets get the max(avg(grade)) of the student
+maxAvg(max_val)
+AS
+	(
+	SELECT MAX(avg_val)
+	FROM studentsAvg 
+	),
+--Third: Lets get the student id who has the Max value
+stOfMaxAvg(st_final)
+AS
+	(
+	SELECT st_id
+	FROM studentsAvg SA,maxAvg MA
+	WHERE SA.avg_val=MA.max_val
+	)
+--Finally: Lets write the query using the results above
+SELECT S.Name,C.Title,T.Grade
+FROM Student S,Take T,Course C,stOfMaxAvg SMA
+WHERE S.StudentNo=T.StudentNo AND T.CourseNo=C.CourseNo AND S.StudentNo=SMA.st_final
+
+
+
+
+/*(c) A query that lists students (id, name) of the instructor who teaches the greatest number
+of hours*/
+
+--First: Lets get the  sum of each instructor using GROUP BY InstNo [ Param(inst_id,sum_hours) SUM(nbHours)]  
+WITH SumHours(inst_id,sum_hours)
+AS
+	(
+	SELECT InstNo,SUM(nbHours)
+	FROM Course
+	GROUP BY InstNo
+	),
+--Second: Lets get the max hours from the above table [Param(max_hours) max(inst_id)]
+MaxHours(max_hours)
+AS
+	(
+	SELECT MAX(sum_hours)
+	FROM SumHours
+	),
+--Third: Lets now get the instrucor id that has the max hours [Param(inst_max)join using :sum_hours=max_hours]
+InstWithMaxHours(inst_max)
+AS
+	(
+	SELECT inst_id
+	FROM SumHours SH,MaxHours MH
+	WHERE SH.sum_hours=MH.max_hours
+	)
+--Finally:Qurey Writing-> Lets get the students of the instructor with instNo= inst_max
+SELECT S.StudentNo,S.Name,I.InstNo,I.Name
+FROM Student S, Take T, Course C, Instructor I,InstWithMaxHours IMH
+WHERE S.StudentNo=T.StudentNo AND T.CourseNo=C.CourseNo AND C.InstNo=I.InstNo AND I.InstNo=IMH.inst_max
+
+
+
+
+
+/*(d) A query that finds names of courses with the highest enrollment*/
+
+--first we got the nbr of students enrolled in courses:
+WITH nbStudents(course_id,nb_of_st)
+AS
+	(
+	SELECT CourseNo,COUNT(DISTINCT StudentNo)
+	FROM Take
+	GROUP BY CourseNo
+	),
+--We should get the max val from table above:
+maxNbStudents(max_nbr)
+AS
+	(
+	SELECT MAX(nb_of_st)
+	FROM nbStudents
+	),
+--we should get the course having the max val above
+courseWithMax(id_max_course)
+AS
+	(
+	SELECT course_id
+	FROM nbStudents NS,maxNbStudents MNS
+	WHERE NS.nb_of_st=MNS.max_nbr
+	)
+--Finally:Writing Query-> Name Of Courses
+--Lets make it more difficult: get me the name of course only + Nbr of enrollment in this particular course
+SELECT C.Title,max_nbr as Enrolled_Number
+FROM Course C,courseWithMax,maxNbStudents
+WHERE C.CourseNo=id_max_course
+

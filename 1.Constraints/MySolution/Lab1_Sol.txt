@@ -1,0 +1,203 @@
+
+//////////Ex1///////////////////////
+a)
+//Creating the constraint:
+ALTER TABLE Instructor
+ADD CONSTRAINT rank_check check(Instructor.Rank in ('Associate','Assistant','Full'));
+
+//Testing the const by violating the conditions
+UPDATE Instructor
+SET Rank='Ful'
+WHERE InstNo=12345;
+
+
+
+b) (Name, Address) of students is unique; 
+//Declaring the constraint
+ALTER TABLE Student 
+ADD CONSTRAINT name_address_unique UNIQUE(Name,Address);
+
+//Testing the const by Violating the condition 
+insert  into Student (StudentNo,Name,Address,EnrollD,GraduatedD) VALUES (1221,'Ali Chueib','Beirut','09-28-2003','05-05-2024');
+insert  into Student (StudentNo,Name,Address,EnrollD,GraduatedD) VALUES (1222,'Ali Chueib','Beirut','09-28-2003','05-05-2024');
+
+
+
+(c) The CourseNo should begin with ”INFO”, ”MATH” or ”PHYS”;
+//Declaring
+ALTER TABLE Course
+ADD CONSTRAINT course_like check (CourseNo LIKE 'INFO%' OR CourseNo LIKE 'MATH%' OR CourseNo LIKE 'PHYS%');
+
+//this could be done to remove a constraint 
+ALTER TABLE Course
+DROP CONSTRAINT course_like;
+
+//Testing the const by viol
+INSERT INTO Course
+VALUES ('ali','Flutter',65,12345);
+
+//Remove testing new rows
+DELETE FROM Course WHERE CourseNo='Math' AND CourseNo='MATH3';
+
+
+
+(d) The name of students should not be NULL;
+//Declaring
+ALTER TABLE Student 
+ADD CONSTRAINT student_name_not_null CHECK(LEN(Student.Name) > 0);
+
+//Testing is un-necessary 
+
+
+
+/*(e) The default value of ”GraduatD” is the current date;
+/////The following fct can print the current date:
+print getdate();*/
+
+//Declaring
+ALTER TABLE Student 
+ADD CONSTRAINT default_GraduatD_value DEFAULT GETDATE() FOR GraduatedD; /////////////////////////////////////////////////////////////////////////////
+
+//Testing by inserting and checking  the GraduatedD
+insert  into Student (StudentNo,Name,Address,EnrollD)VALUES (1221,'Ali Chueib','Beirut','09-28-2003');
+SELECT GraduatedD FROM Student Where StudentNo=1221;
+
+
+
+/*(f) The default value of ”EnrollD” is the current date;*/
+//Declaring
+ALTER TABLE Student 
+ADD CONSTRAINT default_EnrollD_value DEFAULT GETDATE() FOR EnrollD;
+
+//Testing by adding a new student
+insert  into Student (StudentNo,Name,Address) VALUES (1222,'Madona Yasmine','Tyre');
+
+
+
+/*(g) The number of hours of any course should be between 20 and 60 hours
+This could be done using RANGE(start, end)*/
+
+//Declaring the constraint
+ALTER TABLE Course 
+ADD CONSTRAINT hours_range check(nbHours>=20 AND nbHours <=60)
+
+//This could be used to drop the constraint above
+ALTER TABLE Course 
+DROP CONSTRAINT hours_range
+
+//I added this after the declaring the constraint and it failed
+insert into Course (CourseNo,Title,nbHours,InstNo) VALUES ('I3350','Flutter',65,12345);
+
+
+
+/*(h) The grade must be between 0 and 20
+*/
+
+//first I will try to insert a value which doesnot apply the above rule
+INSERT INTO Take (StudentNo,CourseNo,Grade) VALUES (1221,'INFO364',21);
+DELETE FROM Take where Grade=21;
+
+//Declaring the Constraint:
+ALTER TABLE Take
+ADD CONSTRAINT grade_range check(Grade>=0 AND Grade <=20);
+
+
+
+
+//////Ex2//////////////////////////////
+/*(a) Add to the Instructor table, an attribut birthDI;
+*/
+//Adding new column to Instructor table
+ALTER TABLE Instructor
+ADD  birthDI DATE;
+
+//To Drop a column in a Database sometimes we would need to drop the default constraint associated with it
+ALTER TABLE Instructor
+DROP CONSTRAINT DF__Instructo__birth__73BA3083;
+
+ALTER TABLE Instructor
+DROP column birthDate;
+
+
+/*(b) Add to the Student table, an attribut birthDS;*/
+ALTER TABLE Student
+ADD birthDS DATE;
+
+/*(c) Write in TSQL the following constraints:
+i) The age of students must be greater than 18;: USE a function which will compute the difference btw birth date and current date
+ii) The age of instructors must be greater than 30*/
+
+//Declaring the constraint for intructor:
+ALTER TABLE Student
+ADD CONSTRAINT student_age_range check(DATEDIFF(YEAR,Student.birthDS,GETDATE())>=18) ;
+//Testing Viol:
+INSERT INTO Student (StudentNo,Name,Address,birthDS) VALUES (1223,'Maria Khoury','Jbeil','08-23-2002');
+
+//Declaring the constraint for instructor:
+ALTER TABLE Instructor
+ADD CONSTRAINT instructor_age_range check(DATEDIFF(YEAR,birthDI,GETDATE())>=30);//////////////////////////////////////////////////////////
+
+//The Following Fct help you get the diff between two dates, with following prototype:
+// DATEDIFF(DAY,@date_earlier,@date_recent)
+print DATEDIFF(YEAR,'09-28-2003',GETDATE());
+
+
+/*(d) Delete the column birthDI and birthDS.*/
+//Before dropping a column we should make sure that we have  dropped all associated constraints first://///////////////////////////////////////////////////
+//student
+ALTER TABLE Student 
+DROP CONSTRAINT student_age_range ;
+ALTER TABLE Student
+DROP COLUMN birthDS;
+
+//Instructor
+ALTER TABLE Instructor
+DROP CONSTRAINT instructor_age_range;
+ALTER TABLE Instructor 
+DROP COLUMN birthDI
+
+
+
+///////Ex3//////////////////////////////
+/*(a) Drop all the constraints;*//////////////////////////////////////////////////////
+ALTER TABLE Student
+NOCHECK CONSTRAINT ALL
+
+ALTER TABLE Instructor
+NOCHECK CONSTRAINT ALL
+
+ALTER TABLE Course
+NOCHECK CONSTRAINT ALL
+
+ALTER TABLE Take
+NOCHECK CONSTRAINT ALL
+
+
+
+/*(b) Add a ON DELETE CASCADE ON UPDATE CASCADE constraint to the CourseNo////////////////////////////////
+attribut in the relation Take;*/
+
+ALTER TABLE Take 
+ADD CONSTRAINT on_delete_on_update_cascade FOREIGN KEY(CourseNo) REFERENCES Course(CourseNo) ON DELETE CASCADE ON UPDATE CASCADE;
+
+//To test the constraint above lets first create a course and assign it to a student,
+//after that will delete the course and so should happen to the take row!: it will also be deleted
+
+insert into Course (CourseNo,Title,nbHours,InstNo) VALUES ('I3350','Flutter',60,12345);
+insert into take (StudentNo,CourseNo,Grade) values (1221,'I3350',20);
+
+DELETE FROM Course
+WHERE CourseNo='I3350';
+
+
+/*(c) Add a ON DELETE SET NULL ON UPDATE SET NULL constraint to the attribut StudentNo in the relation Take;*/
+//Declaration:
+ALTER TABLE Take WITH NOCHECK
+ADD CONSTRAINT on_delete_set_null 
+FOREIGN KEY (StudentNo) 
+REFERENCES Student(StudentNo)
+ON DELETE SET NULL 
+ON UPDATE SET NULL;
+
+//Lets add an element to Student list and assign a course to him
+//After that we will delete the student and what will happen is: StudentNo Row of the deleted student will become null

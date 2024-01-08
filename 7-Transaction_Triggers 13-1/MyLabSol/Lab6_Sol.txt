@@ -1,0 +1,930 @@
+/*Ex:1Write the following transactions. What is the output ? Comment!
+BEGIN TRANSACTION
+INSERT INTO Instructor VALUES ('1111','Lionel','Full')
+
+SELECT *
+FROM Instructor
+
+ROLLBACK
+
+SELECT *
+FROM Instructor
+*/
+
+/*Exercise 2
+Write a transaction that does the following actions :
+(a) Insert a new instructor
+(b) Associate all courses taught by instructor number 12345 to the inserted instructor
+(c) Delete the instructor number 12345*/
+
+--So lfkra mn lex li fo2 eno hode eza bdi 23malon bi execute we7di msh rah teshti8el:
+
+SET XACT_ABORT ON
+BEGIN TRANSACTION doIt
+INSERT INTO Instructor VALUES('12345','Mike Tayson','Assistant')
+
+UPDATE Course
+SET InstNo='12345'
+WHERE InstNo='1122'
+
+DELETE FROM Instructor
+WHERE InstNo='1122'
+COMMIT
+
+
+/*Exercise 3
+(a) Make a copy named "Temp" (structure + data) of the Student table
+(b) Display the content of the Temp table
+(c) Write a transaction that deletes all rows from the table "Temp"
+(d) Check if the table "Temp" is empty
+(e) Cancel the last operation DELETE
+(f) Check that all rows before the transaction exist
+*/
+--DROP TABLE temp
+--a
+CREATE TABLE Temp(
+	StudentNo char(9) NOT NULL primary key,
+        Name varchar(25) NOT NULL,
+	Address varchar(25) NULL,
+	EnrollD datetime NOT NULL,
+	GraduatedD datetime NULL
+)
+INSERT Temp (StudentNo, Name, Address, EnrollD, GraduatedD)  VALUES
+('453453453', 'Joyce A. English','Saida', '10/10/2000', '01/01/2004'),
+('987987987', 'Ahmad V. Jabbar', 'Tyr', '01/30/2002', '09/29/2006') ,
+('888665555', 'James A. Borg', 'Beirut', '09/28/2003', '09/29/2006'),
+('111223344', 'Linda M. Garcia', 'Beirut', '03/15/2005', NULL),
+('555666777', 'Robert J. Martinez', 'Saida', '08/20/2006', NULL),
+('222444666', 'Emily R. Rodriguez', 'Tyr', '01/10/2008', NULL),
+('777888999', 'Christopher S. Taylor', 'Beirut', '05/25/2010', NULL),
+('123987654', 'Olivia P. Brown', 'Saida', '11/18/2012', NULL)
+
+--b
+SELECT *
+FROM Temp
+
+--c
+BEGIN TRANSACTION tmp
+DELETE FROM Temp
+--d
+SELECT *
+FROM Temp
+--e
+ROLLBACK
+--f
+SELECT *
+FROM Temp
+
+
+
+
+
+
+/*Exercise 4
+Write the following constraints using triggers.
+(a) The age of students must be greater than 18
+(b) The instructor must be older than all his students
+(c) An instructor teaches at most 4 courses*/
+
+--a
+CREATE TRIGGER age_const
+ON Student
+AFTER INSERT 
+AS
+BEGIN
+	IF EXISTS(
+		SELECT * 
+		FROM inserted Tmp,Student S
+		WHERE Tmp.StudentNo=S.StudentNo
+		AND (DATEDIFF(YEAR,S.EnrollD,GETDATE()) < 18)
+	)
+	BEGIN
+		PRINT 'The Student should be 18+'
+		--ROLLBACK
+		DELETE FROM Student WHERE StudentNo IN (SELECT StudentNo FROM inserted)
+		PRINT 'The student was deleted'
+	END
+END
+--DROP TRIGGER age_const
+--INSERT INTO Student VALUES(1221,'Ali Chueib','Beirut','09-28-2003','02-02-2025')
+
+
+--b
+CREATE TRIGGER inst_age_const
+ON Instructor
+AFTER INSERT
+AS
+BEGIN
+	IF EXISTS(
+		SELECT 1 FROM inserted Tmp,Instructor I WHERE Tmp.InstNo=I.InstNo
+		AND DATEDIFF(YEAR,Tmp.birthID,GETDATE()) <= (SELECT MAX(DATEDIFF(YEAR,EnrollD,GETDATE())) FROM Student)
+		)
+	BEGIN
+		--ROLLBACK
+		PRINT 'Instructor does not meet the admission age criteria' 
+		DELETE FROM Instructor WHERE InstNo IN (SELECT InstNo FROM inserted)
+		PRINT 'Instructor was deleted' 
+	END
+END
+
+
+SELECT * FROM Instructor
+--DROP TRIGGER inst_age_const
+
+INSERT INTO Instructor VALUES('1111','Lionel','Full','09-28-1990')
+--DELETE FROM Instructor WHERE InstNo=1111
+
+
+
+/*To be debugged:
+CREATE TRIGGER inst_age_const
+ON Instructor
+INSTEAD OF INSERT
+AS
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM inserted Tmp
+        INNER JOIN Instructor I ON Tmp.InstNo = I.InstNo
+        WHERE DATEDIFF(YEAR, Tmp.birthID, GETDATE()) > (SELECT MAX(DATEDIFF(YEAR, EnrollD, GETDATE())) FROM Student)
+    )
+    BEGIN
+        PRINT 'Inserting the new instructor'
+        INSERT INTO Instructor
+        SELECT *
+        FROM inserted;
+    END
+    ELSE
+        PRINT 'Instructor does not meet the admission age criteria'
+END;
+*/
+
+
+
+--(c) An instructor teaches at most 4 courses
+-------------Using AFTER:----------------------------------
+
+--This function will help me get the nb of courses for a particular instructor:
+CREATE FUNCTION sumCourses(@instNo CHAR(5))
+	RETURNS INT
+AS
+BEGIN
+	DECLARE @sum INT
+	SELECT @sum=COUNT(CourseNo)
+				FROM Course
+				WHERE InstNo=@instNo
+				GROUP BY InstNo
+	RETURN @sum
+END
+
+CREATE TRIGGER instCourse_const
+ON Course
+AFTER INSERT
+AS
+BEGIN
+	IF EXISTS(
+		SELECT *
+		FROM inserted Temp, Course C
+		WHERE Temp.CourseNo=C.CourseNo
+		AND dbo.sumCourses(Temp.InstNo) > 4
+	)
+	BEGIN
+		--ROLLBACK:
+		PRINT 'Instructor has reached the maximum courses number!'  
+		DELETE FROM Course WHERE CourseNo IN (SELECT CourseNo FROM inserted)
+	END
+END		
+
+--This query doesn't worked as Instructor 12345 has reached the max courses 
+INSERT INTO Course VALUES('I3301','SE',46,12345)
+
+--DROP TRIGGER instCourse_const
+
+
+
+-------------Using Instead OF:----------------------------------
+--Table Check Changes:
+SELECT InstNo,COUNT(CourseNo) FROM Course C
+GROUP BY C.InstNo
+
+--DROP TRIGGER instCourse_const_V2
+INSERT INTO Course VALUES('I3303','OS2',46,33344)
+DELETE FROM Course WHERE CourseNo='I3303'
+
+CREATE TRIGGER instCourse_const_V2
+ON Course
+INSTEAD OF INSERT
+AS
+BEGIN
+    IF (SELECT COUNT(*) + (SELECT COUNT(*) FROM inserted) FROM Course C
+        WHERE C.InstNo IN (SELECT InstNo FROM inserted)) < 4
+	BEGIN
+		--ROLLBACK:
+		PRINT 'Adding Course to instructor: '
+		INSERT INTO Course
+		SELECT * FROM inserted;
+	END
+	ELSE
+		PRINT 'Instructor has reached the maximum courses number!'  
+END
+
+/* The Exist Statement is not working in INSTEAD OF for a reason to be identified!
+IF EXISTS(
+		SELECT *
+		FROM inserted Temp, Course C
+		WHERE Temp.CourseNo=C.CourseNo
+		AND dbo.sumCourses(Temp.InstNo) > 4
+	)
+*/
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+///////////////////////////////////////Some Learnings://////////////////////////////////////////////////////////////////////////////////
+
+--Before that lets practice about how to identify the action type: INSERT/DELETE/UPDATE
+CREATE TRIGGER testing ON Student
+AFTER INSERT,DELETE,UPDATE
+AS
+BEGIN
+	DECLARE @ins INT
+	DECLARE @del INT
+
+	SELECT @ins = COUNT(*) FROM inserted
+	SELECT @del = COUNT(*) FROM deleted
+
+	--update case: @ins=1 and @del=1, since in update what we actually do:.delete the old value and insert the new
+	--So it is a mixture of update and delete: so the data will exist in both inserted and deleted tempo tables
+	IF (@ins>=1 AND @del>=1)
+		PRINT 'We are updating!'  -- note: @ins= '+CONVERT(VARCHAR(20),@ins)  + ' ,@del= ' +CONVERT(VARCHAR(20),@del) 
+	IF (@ins>=1 AND @del=0)
+		PRINT 'We are inserting!'  -- note: @ins= '+CONVERT(VARCHAR(20),@ins)  + ' ,@del= ' +CONVERT(VARCHAR(20),@del) 
+	IF (@ins=0 AND @del>=1)
+		PRINT 'We are deleting!'  --note: @ins= '+CONVERT(VARCHAR(20),@ins)  + ' ,@del= ' +CONVERT(VARCHAR(20),@del) 
+END
+
+--DROP TRIGGER testing
+INSERT INTO Student VALUES ('1223','Maria Khoury','Tyre','02-02-2004','12-23-2027')
+
+UPDATE Student SET Name='Maria H Khoury' WHERE StudentNo='1223'
+
+DELETE FROM Student WHERE StudentNo='1223'
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+
+
+
+
+/*Exercise 5
+Write the following triggers :
+(a) A trigger that prohibits the modification of grades
+(b) A trigger that prevents any operation on the table instructor
+(c) A trigger that after removing an instructor, remove all its related information
+(d) Write a trigger that rolls back when trying to add an instructor that is already inserted.
+(e) A trigger that prohibits to decrease the number of course hours.*/
+
+
+--a 
+CREATE TRIGGER prohibitGrade 
+ON Take
+AFTER UPDATE,DELETE
+AS
+BEGIN
+	DECLARE @ins INT 
+	DECLARE @del INT
+	SELECT @ins = COUNT(*) FROM inserted
+	SELECT @del = COUNT(*) FROM deleted
+
+	--IF UPDATE:
+	IF (@ins>=1 AND @del>=1)
+	BEGIN
+		PRINT 'Update is prohibited!'
+		--ROLLBACK:
+		UPDATE T
+		SET Grade=Temp.Grade
+		FROM Take T,deleted Temp
+		WHERE T.StudentNo=Temp.StudentNo AND T.CourseNo=Temp.CourseNo
+	END
+	--IF DELETE:
+	IF (@ins=0 AND @del>=1)
+	BEGIN
+		PRINT 'Deletion is prohibited!'
+		--ROLLBACK
+		INSERT INTO Take
+		SELECT *
+		FROM deleted --In this case there are no more data in take table to use them, unlike in update case
+					 --where StudentNo and CourseNo are still present in the table'in update and insert case'	
+		/*Take T,deleted Temp
+		WHERE T.StudentNo=Temp.StudentNo AND T.CourseNo=Temp.CourseNo*/
+	END
+END
+
+--Testing Updating:
+UPDATE Take
+SET Grade=20
+WHERE StudentNo=111223344 AND CourseNo='INFO380'
+--TESTING Deletion
+DELETE FROM TAKE WHERE StudentNo=111223344 AND CourseNo='INFO380'
+
+--SELECT * FROM Take
+--DROP TRIGGER prohibitGrade
+--INSERT INTO Take VALUES(111223344,'INFO380',18)
+
+
+
+
+
+
+--b : prevents any operation <-> prevents all insert/update/delete
+
+CREATE TRIGGER preventAll
+ON Instructor
+AFTER INSERT,DELETE,UPDATE
+AS
+BEGIN
+	DECLARE @ins INT
+	DECLARE @del INT
+	SELECT @ins = COUNT(*) FROM inserted
+	SELECT @del = COUNT(*) FROM deleted
+
+	--Insertion case:
+	IF (@ins>=1 AND @del=0)
+	BEGIN
+		PRINT 'Insertion is prohibited'
+		--ROLLBACK
+		DELETE FROM Instructor
+		WHERE InstNo IN (SELECT InstNo FROM inserted) --No need for join as we don't need to test conditions
+	END
+	--Deletion case:
+	IF (@ins=0 AND @del>=1)
+	BEGIN
+		PRINT 'Deletion is prohibited'
+		--ROLLBACK:
+		INSERT INTO Instructor
+		SELECT * FROM deleted
+	END
+
+	--Updating case:
+	IF (@ins>=1 AND @del>=1)
+	BEGIN
+		PRINT 'Updating is prohibited'
+		--ROLLBACK:
+		UPDATE Instructor
+		SET Name=Temp.Name,Rank=Temp.RANK,birthID=Temp.birthID
+		FROM deleted Temp
+		WHERE Instructor.InstNo=Temp.InstNo
+	END
+END
+
+SELECT * FROM Instructor
+--DROP TRIGGER preventAll
+
+--testing insertion
+INSERT INTO Instructor VALUES (1112,'Sandro','Full','02-02-1974')
+--testing updating
+UPDATE Instructor
+SET Rank='Full'
+WHERE InstNo=1112
+--testing deletion
+DELETE FROM Instructor WHERE InstNo=1112
+
+
+
+
+
+--c  instructos is related to the Course where each course is associated to an instructor
+	--but this course should remove all data associated to it from Take table!
+
+
+CREATE TRIGGER removeAll
+ON Instructor
+INSTEAD OF DELETE
+AS
+BEGIN
+	DECLARE @del INT
+	SELECT @del = COUNT(*) FROM deleted
+	IF(@del>=1)
+	BEGIN
+		PRINT 'Deletion in Process'
+		IF ( (SELECT COUNT(CourseNo) FROM Course C,deleted Temp WHERE C.InstNo=Temp.InstNo)>=1)
+		BEGIN
+			IF( (SELECT COUNT(CourseNo) FROM Take WHERE CourseNo=(SELECT CourseNo FROM Course C,deleted Temp WHERE C.InstNo=Temp.InstNo))>=1)
+			BEGIN
+				PRINT 'The Courses chosen by students were canceled'
+				DELETE FROM Take WHERE CourseNo IN (SELECT CourseNo FROM Course C,deleted Temp WHERE C.InstNo=Temp.InstNo)
+			END
+			PRINT 'The Courses taught by this instructor was deleted'
+			DELETE FROM Course WHERE InstNo IN (SELECT InstNo FROM deleted)
+		END
+		DELETE FROM Instructor WHERE InstNo IN (SELECT InstNo FROM deleted)
+	END
+END
+
+--DROP TRIGGER removeAll
+--Using those data for testing:
+INSERT INTO Instructor VALUES ('1110','Houmsy','Full','02-02-1965')
+INSERT INTO Course VALUES ('I3300','Anime',60,'1110')
+INSERT INTO Take VALUES (111223344,'I3300',20)
+--Testing:
+DELETE FROM Instructor WHERE InstNo=1110
+
+
+
+
+
+
+
+
+--d
+CREATE TRIGGER instRoll
+ON Instructor
+INSTEAD OF INSERT
+AS
+BEGIN
+	IF((SELECT COUNT(*) FROM Instructor I,inserted Temp WHERE I.InstNo=Temp.InstNo)>=1)
+		PRINT 'Intructor Already Exists' --Since we are using instead of: nothing happened yet: so just send an alert message and operation wont happen
+END
+
+
+INSERT INTO Instructor VALUES(12345,'John B. Smith','Full')
+
+DROP TRIGGER instRoll
+
+
+
+
+
+
+--e: prohibiting nbHours update (decreasing it)
+
+CREATE TRIGGER prohibitHours
+ON Course
+INSTEAD OF UPDATE
+AS
+BEGIN
+	DECLARE @ins INT 
+	DECLARE @del INT
+	SELECT @ins = COUNT(*) FROM inserted
+	SELECT @del = COUNT(*) FROM deleted
+	IF(@ins>=1 AND @del>=1)
+	BEGIN
+		DECLARE @preNb INT
+		SELECT @preNb= nbHours FROM  deleted
+		DECLARE @postNb INT
+		SELECT @postNb= nbHours FROM  inserted
+		IF(@preNb <= @postNb)
+		BEGIN
+			UPDATE Course 
+			SET Title=Temp.Title,nbHours=Temp.nbHours,InstNo=Temp.InstNo
+			FROM inserted Temp
+			WHERE Course.CourseNo=Temp.CourseNo
+			PRINT 'Successfully done!'
+		END
+		ELSE
+			PRINT 'You cannot decrease nbHours for a Course!!!'
+	END
+END
+
+SELECT * FROM Course
+--DROP TRIGGER prohibitHours
+--Testing:
+UPDATE Course SET nbHours=52 WHERE CourseNo='INFO378'
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/*Exercise 6
+Create a table that has two columns : id and name. Make the id auto-increment using triggers.
+The initial seed should be 10.
+*/
+
+CREATE TABLE Testing(
+	pid INT NOT NULL,
+	pname VARCHAR(50) NOT NULL,
+	PRIMARY KEY(pid)
+)
+
+SELECT * FROM Testing
+
+CREATE TRIGGER autoIncrement
+ON Testing
+INSTEAD OF INSERT
+AS
+BEGIN
+	--first we should test if the table is empty, if so: then start from id=10
+	DECLARE @empty INT
+	SELECT @empty = COUNT(*) FROM Testing
+
+	--lets get the name the user :'I have declared the var outside statements since name will be used in bith cases'
+	DECLARE @name VARCHAR(50)
+	SELECT @name = pname FROM inserted
+	IF(@empty=0)
+	BEGIN
+		PRINT 'This is the first element in the table Testing!'
+		INSERT INTO Testing VALUES (10,@name)
+	END
+	--else we take the prevId and increment it -> hand it to the present row !
+	ELSE
+	BEGIN
+		DECLARE @prevId INT
+		SELECT @prevId = pid FROM Testing
+		SET @prevId= @prevId + 1
+		INSERT INTO Testing VALUES (@prevId,@name)
+		PRINT 'Added Successfully!'
+	END
+END
+
+SELECT * FROM Testing
+--Teasting the Trigger:
+INSERT INTO Testing(pname) VALUES('Madona Sulayman')
+
+
+
+
+
+
+
+
+
+
+
+/*
+Exercise 7
+One wants to very quickly retrieve some statistics for each student and for this one needs a
+’master table’ : StatStudent (id, nbS, nbF, av). This table maintains the number of successful
+courses (nbS), the number of failed courses nbF and the grade average (av) of each student.
+Write a trigger that maintains the table StatStudent updated correctly whenever the table
+"Takes" is updated. Make sure you can handle every possible update of "Takes" that influences StatStudent.
+*/
+
+/*
+Every possible update:
+1.If a student added a new course to the Take Table(new course Addition)
+2.Question: Should we be able to remove a student?. Yes!: then we should remove student from the StatStudent table
+3.Question: Should we be able to edit grade?. Yes!: then we should re-count and re-compute avg and update accordingly
+4.A new student is added to the Take table
+5.Question: First should the table be automaticcally initialized? In optimal case: it shoould be auto-init
+So we will ckeck if StudentNo EXISTS IN the Stat table:
+-If yes:then this if has no action
+-Else: we insert into the table
+
+Tips:
+-(since we are using insert, why not make it as stored procedure?)
+-(since we need 'average/succedCount/FailedCount' why not make fcts that will return those values)
+*/
+
+
+--StatStudent (id, nbS, nbF, av)
+CREATE TABLE StatStudent(
+	id INT PRIMARY KEY,
+	nbS NUMERIC(4,2) NOT NULL,
+	nbF NUMERIC(4,2) NOT NULL,
+	av NUMERIC(4,2) NOT NULL
+)
+
+SELECT * FROM StatStudent
+
+--Function that compute the Succeeded courses count
+CREATE FUNCTION getNbS(@stId INT)
+	RETURNS INT
+AS
+BEGIN
+	DECLARE @nbS INT
+	SELECT @nbS = COUNT(*) FROM Take WHERE Grade>=10 AND StudentNo=@stId
+	RETURN @nbS
+END
+--DROP FUNCTION getNbS 
+--Testing get succeeded courses count:
+PRINT dbo.getNbS(453453453)
+
+--Function that compute the Failed courses count
+CREATE FUNCTION getNbF(@stId INT)
+	RETURNS INT
+AS
+BEGIN
+	DECLARE @nbS INT
+	SELECT @nbS = COUNT(*) FROM Take WHERE Grade<10 AND StudentNo=@stId
+	RETURN @nbS
+END
+--DROP FUNCTION getNbF 
+--Testing get failed courses count:
+PRINT dbo.getNbF(453453453)
+
+--Function that returns the average of a particular student
+CREATE FUNCTION getAvg(@stId INT)
+	RETURNS NUMERIC(4,2)
+AS
+BEGIN
+	DECLARE @avg NUMERIC(4,2)
+	SELECT @avg = AVG(Grade) FROM Take WHERE StudentNo=@stId
+	RETURN @avg
+END
+--DROP FUNCTION getAvg
+--Testing get average of all students grades:
+PRINT dbo.getAvg(453453453)
+--SELECT AVG(Grade) FROM Take WHERE StudentNo=453453453
+
+
+
+--Trigger Declaration:
+CREATE TRIGGER autoResult
+ON Take
+AFTER INSERT,UPDATE,DELETE
+AS
+BEGIN
+	DECLARE @ins INT
+	DECLARE @del INT
+	SELECT @ins = COUNT(*) FROM inserted
+	SELECT @del = COUNT(*) FROM deleted
+
+	--Getting Students Id:
+		DECLARE @stId INT
+		SELECT @stId = StudentNo FROM inserted
+
+	--insert condition:
+	IF(@ins>=1 AND @del=0)
+	BEGIN
+		--Case when student already have a row:
+		IF ((SELECT COUNT(*) FROM inserted Temp,StatStudent SS WHERE Temp.StudentNo=SS.id)>=1)--reutrn 1 if students already exists
+		BEGIN
+			PRINT 'A row in StatStudent Table was modified!'
+			--then we should modify the row of and recompute the datafields:
+			UPDATE StatStudent
+			SET  nbS= dbo.getNbS(@stId),nbF=dbo.getNbF(@stId),av=dbo.getAvg(@stId)
+			WHERE id=@stId
+		END
+
+		--Case when student have no row:
+		ELSE
+		BEGIN
+			--We should insert a new row to the table:
+			INSERT INTO StatStudent VALUES(@stId,dbo.getNbS(@stId),dbo.getNbF(@stId),dbo.getAvg(@stId))
+			PRINT 'A new row was added to StatStudent Table!'
+		END
+	END
+	
+	--Getting Students Id:
+		DECLARE @stId_del INT
+		SELECT @stId_del = StudentNo FROM deleted
+
+	--update condition:
+	IF(@ins>=1 AND @del>=1)
+	BEGIN
+		UPDATE StatStudent
+		SET nbS= dbo.getNbS(@stId_del),nbF=dbo.getNbF(@stId_del),av=dbo.getAvg(@stId_del)
+		WHERE id=@stId_del
+		PRINT 'The table StatStudent was updated too'
+	END
+
+	--delete condition:
+	IF(@ins=0 AND @del>=1)
+	BEGIN
+		--Hl2 bas bdi 23mal delete: bdi ru8 shuf eza b3do mawjud bi 2aleb l table take? if yes: just update else:DELETE
+		IF((SELECT COUNT(*) FROM Take T,deleted Temp WHERE T.StudentNo=Temp.StudentNo)>=1)
+		BEGIN 
+			UPDATE StatStudent
+			SET nbS= dbo.getNbS(@stId_del),nbF=dbo.getNbF(@stId_del),av=dbo.getAvg(@stId_del)
+			WHERE id=@stId_del
+			PRINT 'The table StatStudent was updated!'
+		END
+		ELSE
+		BEGIN
+			DELETE FROM StatStudent WHERE id=@stId_del
+			PRINT 'A row was deleted from StatStudent Table!'
+		END
+	END
+END
+
+--DROP TRIGGER autoResult
+SELECT * FROM Student
+SELECT * FROM Course
+SELECT * FROM Take
+SELECT * FROM StatStudent
+--DELETE FROM StatStudent
+--DELETE FROM Take WHERE StudentNo=1221
+--Testing Insertion:
+INSERT INTO Course VALUES('I3350','Flutter',60,12345)
+INSERT INTO Course VALUES('I3505','React',30,12345)
+INSERT INTO Student VALUES(1221,'Ali Chueib','Beirut',GETDATE())
+INSERT INTO Take VALUES(1221,'I3505',15)
+INSERT INTO Take VALUES(1221,'I3350',20)
+INSERT INTO Take VALUES (453453453,'I3350',16)
+INSERT INTO Take VALUES (888665555,'I3350',5)
+INSERT INTO Take VALUES (987987987,'I3350',18)
+--testing updating 
+UPDATE Take
+SET Grade=20
+WHERE  StudentNo=453453453 AND CourseNo='I3350'
+--Testing Deletion
+DELETE FROM Take
+WHERE StudentNo=888665555 AND CourseNo='INFO378'
+DELETE FROM Take
+WHERE StudentNo=888665555 AND CourseNo='I3350'
+--ALTER TABLE StatStudent
+--ALTER COLUMN nbS INT
+--ALTER TABLE StatStudent
+--ALTER COLUMN nbF INT
+
+
+
+
+
+
+
+
+
+
+
+
+
+/*
+Exercise 8
+Create an audit trail that stores changes in the table "Take".
+*/
+--Audit Table declaration:
+CREATE TABLE StudentAudit(
+	id INT PRIMARY KEY IDENTITY(1,1),
+	operation VARCHAR(30) NOT NULL,
+	oldStNo CHAR(9),
+	newStNo CHAR(9),
+	oldCNo CHAR(7),
+	newCNo CHAR(7),
+	oldGrade NUMERIC(4,2),
+	newGrade NUMERIC(4,2),
+	opDate DATETIME NOT NULL DEFAULT GETDATE() 
+)
+
+SELECT * FROM StudentAudit
+
+CREATE TRIGGER StAudiAuto
+ON Take
+AFTER INSERT, UPDATE, DELETE
+AS
+BEGIN
+	DECLARE @ins INT
+	DECLARE @del INT
+	SELECT @ins = COUNT(*) FROM inserted
+	SELECT @del = COUNT(*) FROM deleted
+
+	--Those will be used in different statements:
+		DECLARE @c1 CURSOR
+		DECLARE @c2 CURSOR
+		DECLARE @oper VARCHAR(30)
+		DECLARE @oldStId CHAR(9)
+		DECLARE @newStId CHAR(9)
+		DECLARE @oldCNo CHAR(7)
+		DECLARE @newCNo CHAR(7)
+		DECLARE @oldGrade NUMERIC(4,2)
+		DECLARE @newGrade NUMERIC(4,2)
+
+	--Adding:
+	IF(@ins>=1 AND @del=0)
+	BEGIN 
+		PRINT 'We know everything!'
+		--Setting operation to Addition:
+		SET @oper ='Addition'
+
+		--Mutli-line Addition:
+		SET @c2 = CURSOR 
+		FOR 
+			SELECT StudentNo,CourseNo,Grade
+			FROM inserted 
+
+		OPEN @c2
+
+		FETCH NEXT FROM @c2 INTO @newStId,@newCNo,@newGrade
+		WHILE (@@FETCH_STATUS=0)
+		BEGIN
+			INSERT INTO StudentAudit(operation,oldStNo,newStNo,oldCNo,newCNo,oldGrade,newGrade)
+			VALUES (@oper,NULL,@newStId,NULL,@newCNo,NULL,@newGrade)
+			FETCH NEXT FROM @c2 INTO @newStId,@newCNo,@newGrade
+		END
+		close @c2
+		DEALLOCATE @c2
+	END
+	--Modifying:
+	IF(@ins>=1 AND @del>=1)
+	BEGIN
+		PRINT 'We know everything!'
+		--Setting operation to Addition:
+		SET @oper ='Modification'
+
+		--Getting old data
+		SET @c1 = CURSOR 
+		FOR 
+			SELECT StudentNo,CourseNo,Grade
+			FROM deleted 
+
+		OPEN @c1
+		
+		--Getting new data:
+		SET @c2 = CURSOR 
+		FOR 
+			SELECT StudentNo,CourseNo,Grade
+			FROM inserted 
+
+		OPEN @c2
+
+		FETCH NEXT FROM @c1 INTO @oldStId,@oldCNo,@oldGrade
+		FETCH NEXT FROM @c2 INTO @newStId,@newCNo,@newGrade
+		WHILE(@@FETCH_STATUS=0)
+		BEGIN
+			INSERT INTO StudentAudit(operation,oldStNo,newStNo,oldCNo,newCNo,oldGrade,newGrade)
+			VALUES (@oper,@oldStId,@newStId,@oldCNo,@newCNo,@oldGrade,@newGrade)
+
+			FETCH NEXT FROM @c1 INTO @oldStId,@oldCNo,@oldGrade
+			FETCH NEXT FROM @c2 INTO @newStId,@newCNo,@newGrade
+		END
+		--Freeing Resources:
+		close @c1
+		DEALLOCATE @c1
+		close @c2
+		DEALLOCATE @c2
+
+	END
+
+	--Deletion:
+	IF(@ins=0 AND @del>=1)
+	BEGIN
+		PRINT 'We know everything!'
+		--Setting operation to Addition:
+		SET @oper ='Deletion'
+
+		--Getting old data
+		SET @c1 = CURSOR 
+		FOR 
+			SELECT StudentNo,CourseNo,Grade
+			FROM deleted 
+
+		OPEN @c1
+
+		FETCH NEXT FROM @c1 INTO @oldStId,@oldCNo,@oldGrade
+				WHILE(@@FETCH_STATUS=0)
+		BEGIN
+			INSERT INTO StudentAudit(operation,oldStNo,newStNo,oldCNo,newCNo,oldGrade,newGrade)
+			VALUES (@oper,@oldStId,NULL,@oldCNo,NULL,@oldGrade,NULL)
+
+			FETCH NEXT FROM @c1 INTO @oldStId,@oldCNo,@oldGrade
+		END
+		--Freeing Resources:
+		close @c1
+		DEALLOCATE @c1
+	END
+END
+
+
+
+SELECT * FROM Take
+SELECT * FROM Course
+
+SELECT * FROM StudentAudit
+--DROP TRIGGER StAudiAuto
+--DELETE FROM StudentAudit
+
+--DROP TABLE StudentAudit
+--SELECT * FROM StatStudent
+
+--INSERT INTO Take VALUES(888665555,'I3505',17)
+--DELETE FROM Take WHERE StudentNo=888665555 AND CourseNo='I3505'
+
+BEGIN TRANSACTION test1
+UPDATE Take
+SET Grade=19
+WHERE StudentNo=888665555 --AND CourseNo='I3505' 
+
+UPDATE Take
+ROLLBACK
+COMMIT
+
+
+BEGIN TRANSACTION test2
+INSERT INTO Take VALUES(453453453,'I3505',15)
+DELETE FROM Take WHERE StudentNo=453453453 AND CourseNo='I3505'
+ROLLBACK
+COMMIT

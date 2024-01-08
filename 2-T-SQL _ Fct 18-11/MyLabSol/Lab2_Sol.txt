@@ -1,0 +1,366 @@
+Lab2 Solution {T-SQL/Fucntions}
+//////////Ex1//////////////////////////////////////////////////
+
+/*(a) The grade average of a given student ;*/
+
+//The fct which will the retur the average scalar value
+SELECT AVG(Grade)
+FROM Take
+WHERE StudentNo=453453453;
+
+//Scalar Function Declaration
+CREATE FUNCTION st_Avg_Grade(@st_id INT)
+	RETURNS INT
+AS
+	BEGIN
+		DECLARE @val int
+		SELECT @val = AVG(Grade) FROM Take WHERE StudentNo=@st_id
+		RETURN @val
+	END
+GO
+
+//Testing the fct
+DECLARE @Ejre int
+SET @Ejre=dbo.st_Avg_Grade(453453453)
+print '2ijre endo hal Average:' + CONVERT(VARCHAR(60),@Ejre);
+
+//To Drop a declared Fct:
+DROP FUNCTION dbo.st_Avg_Grade;
+
+
+
+
+/*(b) A function that gets the list of courses taught by ”Full” instructors;*/
+//Here he want a list <-> Table 
+
+//Lets insert a new course and hand it to instructor 99988
+INSERT INTO Course VALUES ('I3350','Flutter',60,99988);
+
+//Lets write the query which give the following list
+//So bdi 23mal join btween instructor and course where rank='Full'
+
+SELECT C.CourseNo, C.Title,I.Name,I.Rank
+FROM Course C, Instructor I
+WHERE C.InstNo=I.InstNo AND Rank='Full';
+
+//Now after writing the fct lets declare the fct
+CREATE FUNCTION get_course_by_rank(@rank_type VARCHAR(60))
+	RETURNS TABLE
+AS 
+	RETURN
+	(
+		SELECT C.CourseNo, C.Title,I.Name,I.Rank
+		FROM Course C, Instructor I
+		WHERE C.InstNo=I.InstNo AND Rank=@rank_type
+	)
+
+//Lets test the fct we just wrote: 'To test a fct which returns a table you should select from the fct'
+SELECT * 
+FROM dbo.get_course_by_rank('Full');
+
+
+
+
+/*(c) A function that gets the list of graduated students before a given date;*/
+
+//To acheive the above task we can do it using multi methods,
+//1st:Using DATEDIFF(), if positive return 0, if negative return 1 since it is before indeed
+//Pay attention to use DAY in fct 
+
+//2nd:Using Comparison, if (gradD<'09-28-2003') -> return 1/ 0 
+//Noteee:the select body in fcts will use check to ver
+
+
+//Declaring Fct: 
+CREATE FUNCTION grad_before(@grad_date DATE)
+	RETURNS TABLE
+AS 
+	RETURN
+	(
+		SELECT *
+		FROM Student
+		WHERE DATEDIFF(DAY,@grad_date,GraduatedD)<=0
+	)
+
+//I used it For Debugging Purposes
+DROP FUNCTION grad_before;
+
+//Testing fct:
+SELECT *
+FROM dbo.grad_before('12-17-2022')
+
+
+
+
+/*(d) A function that gets for each student the name and the status obtained as follows:
+• if the average is greater than 50, the status should be equal to ’Succeeded’
+• otherwise, the status should be equal to ’Failed’*/
+
+
+//This can be done using case {WHEN - THEN}
+//Here I will be using the AVG I have declared in the first Question
+
+//Query that will be used in the body:
+SELECT Name,'Status'=
+	CASE
+		WHEN dbo.st_Avg_Grade(StudentNo)>50 THEN 'Succeeded'
+		ELSE 'Failed'
+	END
+FROM Student
+
+//Fct Declaration:
+CREATE FUNCTION succeed_failed_grades()
+	RETURNS TABLE
+AS
+	RETURN
+	(
+	SELECT Name,'Status'=
+		CASE
+			WHEN dbo.st_Avg_Grade(StudentNo)>50 THEN 'Succeeded'
+			ELSE 'Failed'
+		END
+	FROM Student
+	)
+
+//Testing the fct above:
+SELECT *
+FROM dbo.succeed_failed_grades()
+
+//In case you want to add any new data to test the above query
+INSERT INTO Take(StudentNo,CourseNo,Grade) VALUES (,,);
+
+
+
+
+/*(e) A function that returns the number of students enrolled in courses given by ”Assistant”
+instructors*/
+
+so here I should return a scalar value  of the counted students that are enrolled in a course given by Assistant Intructor
+
+//Query Declaration:
+SELECT COUNT(DISTINCT S.StudentNo)
+FROM Student S,Take T,Course C,Instructor I
+WHERE S.StudentNo=T.StudentNo AND T.CourseNo=C.CourseNo AND C.InstNo=I.InstNo
+AND I.Rank='Assistant'
+
+//Fct Declaration
+CREATE FUNCTION enrolled_rank(@inst_rank VARCHAR(100))
+	RETURNS INT
+AS
+BEGIN
+	DECLARE @st_nb INT
+	SELECT @st_nb = COUNT(DISTINCT S.StudentNo)
+	FROM Student S,Take T,Course C,Instructor I
+	WHERE S.StudentNo=T.StudentNo AND T.CourseNo=C.CourseNo AND C.InstNo=I.InstNo
+	AND I.Rank=@inst_rank
+	RETURN @st_nb
+END
+
+//Testing the above fct:
+print dbo.enrolled_rank('Assistant')
+
+
+
+
+
+///////EX2///////////////////////////////////////////////////////////////////////////
+
+/*(a) The number of courses taken by a student must be less than 5;*/
+
+
+--Query that will be used:
+SELECT COUNT(StudentNo)
+FROM Take
+WHERE StudentNo=1221
+GROUP BY StudentNo
+
+--Fct that will be used in check():
+CREATE FUNCTION enrolled_courses_count(@st_id INT)
+	RETURNS INT
+AS
+BEGIN
+	DECLARE @c_nb INT = 0 --if the student doesn't apply to the condition then he will have 0 value <-> false result in check
+	SELECT @c_nb =	COUNT(StudentNo)
+					FROM Take
+					WHERE StudentNo=@st_id
+					GROUP BY StudentNo
+	RETURN @c_nb
+END
+
+--Could be used:
+DROP FUNCTION dbo.enrolled_courses_count
+
+--CONSTRAINT ADDING:
+ALTER TABLE Student
+ADD CONSTRAINT enrolled_count_const check(dbo.enrolled_courses_count(StudentNo) BETWEEN 0 AND 4)
+
+
+
+
+/*(b) The courses of ”math” should be taught only by full instructors;*/
+
+--My Method (that was complicated)
+--Query that will be used
+--if count >0 then  the course exist ->
+SELECT COUNT(CourseNo)
+FROM Course
+WHERE CourseNo IN (
+SELECT C.CourseNo
+FROM Course C,Instructor I
+WHERE C.InstNo=I.InstNo AND C.CourseNo LIKE 'INFO36%' AND I.Rank='Full'
+)
+
+--DECLARING FCT that will be used in check
+CREATE FUNCTION math_full(@course_id VARCHAR(60))
+	RETURNS INT
+BEGIN
+	DECLARE @c INT
+	SELECT @c = COUNT(CourseNo)
+				FROM Course
+				WHERE CourseNo IN (
+				SELECT C.CourseNo
+				FROM Course C,Instructor I
+				WHERE C.InstNo=I.InstNo AND C.CourseNo LIKE 'M%' AND I.Rank='Full'
+				)
+	RETURN CASE 
+				WHEN @c=1 AND @course_id LIKE 'M%' THEN 1 
+				WHEN @c=1 AND @course_id NOT Like 'M%' THEN 1 
+				WHEN @c=0 AND @course_id NOT Like 'M%' THEN 1 
+				ELSE 0
+			END
+END
+
+--ADDING CONSTRAINT:
+ALTER TABLE Course
+ADD CONSTRAINT math_full_const check(dbo.math_full(CourseNo)=1)
+
+INSERT INTO Course VALUES('I2206','Data Structure',42,33344)
+
+
+--ChatGPT method:
+-- Assuming that the column names are accurate, adjust them if necessary
+ALTER TABLE Course
+ADD CONSTRAINT CHK_MathFullInstructor
+CHECK (
+    NOT EXISTS (
+        SELECT 1
+        FROM Course C
+        JOIN Instructor I ON C.InstNo = I.InstNo
+        WHERE C.Title LIKE 'math%'
+          AND I.Rank <> 'Full'
+    )
+);
+
+
+
+
+--(c) The number of hours taught by an instructor should be between 250 and 300
+SUM of hours BETWEEN 250 AND 300, so I should make a fct that give the sum of the nbHours
+input:instNo output:nbHours SUM
+
+
+--Query that will be used:
+SELECT SUM(nbHours)
+FROM Course
+WHERE InstNo=12345
+
+
+--Fct that will be used in check:
+CREATE FUNCTION taught_hours_range(@inst_id INT)
+	RETURNS INT
+AS
+BEGIN
+	DECLARE @hour_range INT
+	SELECT @hour_range =SUM(nbHours)
+						FROM Course
+						WHERE InstNo=@inst_id
+						GROUP BY InstNo
+	RETURN @hour_range
+END
+
+DROP FUNCTION dbo.taught_hours_range;
+
+ALTER TABLE Course
+DROP CONSTRAINT taught_hours_range_const
+
+--ADD CONSTRAINT:
+ALTER TABLE Course with nocheck
+ADD CONSTRAINT taught_hours_range_const CHECK(dbo.taught_hours_range(InstNo) BETWEEN 250 AND 300);
+
+--Testing added constraint!:This testing didn't worked
+INSERT Course (CourseNo,Title,nbHours,InstNo) VALUES
+ ('I3306','DB2',100,12345),
+  ('I3301','SE',100,12345),
+  ('I3303','OS2',60,12345)
+
+/*(d) The age of the professor must be greater than the age of his students;*/
+
+--Query that will be used in the first fct:
+CREATE FUNCTION age_list()
+	returns TABLE
+AS
+	RETURN
+	(
+		SELECT DATEDIFF(YEAR,EnrollD,GETDATE()) AS 'Age' FROM Student
+	)
+
+-- Fct that will be used in fct:
+SELECT MAX(Age) 
+FROM dbo.age_list()
+
+--2nd Fct Declaration:
+CREATE FUNCTION max_age()
+	RETURNS INT
+AS
+BEGIN
+	DECLARE @max_age INT
+	SELECT @max_age=MAX(Age) 
+					FROM dbo.age_list()
+	RETURN @max_age
+END
+
+--3rd fct: will give the age of a particular inst
+CREATE FUNCTION inst_age(@inst_id INT)
+	RETURNS INT
+AS
+BEGIN
+	DECLARE @age INT
+	SELECT @age= DATEDIFF(YEAR,birthDI,GETDATE()) FROM Instructor WHERE InstNo=@inst_id
+	if @age>dbo.max_age()
+		RETURN 1
+	RETURN 0
+END
+
+--This will be return 1 as this instructor is older then all students:
+PRINT dbo.inst_age(12345)
+--Before adding constraint we should birthdate column
+ALTER TABLE Instructor 
+ADD birthDI DATE 
+
+--Adding Constraint:
+ALTER TABLE Instructor WITH NOCHECK
+ADD CONSTRAINT inst_age_const CHECK(dbo.inst_age(InstNo)=1)
+
+
+
+
+--(e) A course should be taken by at most 40 students;
+
+--Query that will be used in fct:
+SELECT COUNT(DISTINCT StudentNo) FROM Take WHERE CourseNo='I3350' GROUP BY CourseNo
+
+--Fct Declaration:
+CREATE FUNCTION course_enrolled(@course_id INT)
+	RETURNS INT
+AS
+BEGIN
+	DECLARE @count INT
+	SELECT @count = COUNT(DISTINCT StudentNo) FROM Take WHERE CourseNo=@course_id GROUP BY CourseNo
+	IF @count <= 40
+		RETURN 1
+	RETURN 0
+END
+
+--Adding Constraint:
+ALTER TABLE Take WITH NOCHECK
+ADD CONSTRAINT course_max_40 CHECK(dbo.course_enrolled(StudentNo)=1);

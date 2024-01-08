@@ -1,0 +1,109 @@
+/////Ex1//////////////////Write the following Stored Procedures in TSQL///////////////////////////
+
+
+/*(a) A SP that deletes a given student. If the student does not exist, an error message should
+be displayed;*/
+
+--CREATE SP:
+CREATE PROCEDURE sp_delete_st (@st_id INT)
+AS
+	DECLARE @id INT
+	SELECT @id= COUNT(*) FROM Student WHERE StudentNo=@st_id
+	if @id=0
+		print 'The student with id: ' + CONVERT(VARCHAR ,@st_id) + ' does not exists'
+	ELSE
+	BEGIN
+		DELETE FROM Student WHERE StudentNo=@st_id
+		print 'The student with id: ' + CONVERT(VARCHAR ,@st_id) + ' was successfully deleted!'
+	END
+
+--To Delete Procedure:
+DROP PROCEDURE  sp_delete_st 
+
+--Insert Data into table so it can be used:
+insert into Student VALUES(1111,'Ali Ayyash','Nabatiye',GETDATE(),'02-15-2026')
+
+--Run SP:
+EXEC sp_delete_st @st_id=1111
+
+
+
+
+/*(b) A SP that returns the number of students enrolled in courses given by ”Assistant” instructors*/
+
+--Create SP:
+CREATE PROCEDURE sp_enrolled_assistant(@inst_rank VARCHAR(60),@st_nbr INT OUTPUT)
+AS
+	SELECT @st_nbr = COUNT(DISTINCT T.StudentNo)
+	FROM Take T,Course C,Instructor I
+	WHERE T.CourseNo=C.CourseNo AND C.InstNo=I.InstNo
+	AND I.Rank=@inst_rank
+
+--DELETE SP:
+DROP PROCEDURE sp_enrolled_assistant
+
+--Run SP:
+DECLARE @result INT
+EXECUTE sp_enrolled_assistant 'Assistant',@result OUTPUT
+PRINT @result
+
+
+
+
+/*(c) A SP that makes all students that should be ”graduated” graduated. A student should
+be gratuated if the number of enrolled courses is 30 and the grade average is greater
+than 10.	For simplicity we will consider nb of courses for graduation is 2*/
+
+--CREATE FUNCTION :
+CREATE FUNCTION sp_helper_fct()
+	returns TABLE
+AS
+	RETURN
+	(
+		SELECT S.StudentNo
+		FROM Student S,Take T
+		WHERE S.StudentNo=T.StudentNo 
+		GROUP BY S.StudentNo 
+		HAVING COUNT(DISTINCT T.CourseNo) >=2
+		INTERSECT 
+		SELECT S.StudentNo
+		FROM Student S,Take T
+		WHERE S.StudentNo=T.StudentNo 
+		GROUP BY S.StudentNo 
+		HAVING AVG(T.Grade) >=50
+	)
+
+--Create Procedure:
+CREATE PROCEDURE sp_graduate_st
+AS
+	SELECT StudentNo,'Graduation'='Succedd'
+	FROM dbo.sp_helper_fct()
+
+--Run Prodecure:
+EXECUTE sp_graduate_st
+
+
+
+
+
+/*(d) A SP that prints the enrolled courses for a given student.*/
+--If student has no courses enrolled --> Print error message
+--Else I should print the list of students that apply to the above condition
+
+--Create Procedure:
+CREATE PROCEDURE sp_st_courses(@st_id INT)
+AS
+	DECLARE @count INT
+	SELECT @count = COUNT(*) FROM Take WHERE StudentNo=@st_id
+	if @count=0
+		print 'There are no enrolled courses for st with id: ' + convert(VARCHAR(60),@st_id)
+	ELSE
+	BEGIN
+		PRINT 'The enrolled courses for st with id: ' + convert(VARCHAR(60),@st_id) + ' are:'
+		SELECT CourseNo
+		FROM Take
+		WHERE StudentNo=@st_id
+	END
+
+--Running SP:
+EXEC sp_st_courses @st_id=888665555

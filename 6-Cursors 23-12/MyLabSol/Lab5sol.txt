@@ -1,0 +1,354 @@
+/*(a) Create a SP that displays the grades of students as follows :
+Ali receives the grade 12 for the course math200
+Hussein receives the grade 13 for the course info210*/
+
+--First let's construct the query that we will use in the sp that will be included in the while loop 
+SELECT S.Name,T.Grade,T.CourseNo
+FROM Student S,Take T
+WHERE S.StudentNo=T.StudentNo
+
+
+--Second Lets create the SP That will include our code:
+CREATE PROCEDURE displayStGrades
+AS
+	--Now lets declare a cursor and the variables that will store the data fetched
+	DECLARE @c CURSOR 
+	DECLARE @name VARCHAR(25)
+	DECLARE @grade NUMERIC(4,2)
+	DECLARE @course CHAR(7)
+
+	--Lets assign cursor to the query
+	SET @c = CURSOR
+	FOR 
+		SELECT S.Name,T.Grade,T.CourseNo
+		FROM Student S,Take T
+		WHERE S.StudentNo=T.StudentNo
+	--open cursor: so that it will be transfered to the tempo workplace (as master we have tempo)
+	OPEN @c
+
+	--Fetching 
+	FETCH NEXT FROM @c INTO @name,@grade,@course --this will be point to the first row and thus those variables will be storing
+	WHILE @@FETCH_STATUS=0						 --first row's data
+	BEGIN
+		print @name + ' receives the grade ' +CONVERT(VARCHAR(20),@grade)+ ' for the course '+ @course
+		FETCH NEXT FROM @c INTO @name,@grade,@course
+	END
+
+	CLOSE @c
+	DEALLOCATE @c
+
+DROP PROCEDURE displayStGrades
+--Lets run the Procedure we just created and thus see the results
+EXEC displayStGrades
+
+
+
+/*(b) Create a program that diplays the teaching courses for each instructor as follows :
+Instructor number: 12345 teaches the following 2 courses:
+Algebra
+Introduction to Databases
+Instructor number: 33344 teaches only one course:
+Advanced Databases
+Instructor number: 66688 teaches the following 2 courses:
+XML
+Web Services
+*/
+
+/* So actually what is being done in the above code is: that they are counting the nbr of courses been given by dr
++ all other info*/
+
+/*Lets write first The query: 'The below fct will be used in the query' first try to write all the query here and you will get
+the following information:
+--The Reason I wrote the following fct is so that I can join the result with other table, and so display third col
+--as if I tried to select the a 3rd param it won't work, since the I am using GROUP BY */
+CREATE FUNCTION list()
+	RETURNS TABLE
+AS
+	RETURN
+	(
+	SELECT InstNo,Title
+	FROM Course
+	GROUP BY InstNo,Title
+	)
+--Creating Procedure:
+CREATE PROCEDURE displayInstructors
+AS
+	--Now lets start creating our cursor fetcher:
+	DECLARE @c CURSOR
+	DECLARE @inst_id CHAR(5)
+	DECLARE @title VARCHAR(30)
+	DECLARE @count INT
+	DECLARE @prev_inst_id CHAR(5)
+
+	SET @c= CURSOR 
+	FOR
+		WITH nbr_courses(inst_id,nbr)
+		AS
+			(
+			SELECT InstNo,COUNT(InstNo) AS NbrOfTaughtCourses
+			FROM Course 
+			GROUP BY InstNo
+			)
+		SELECT InstNo,Title,nbr
+		FROM dbo.list(),nbr_courses
+		WHERE InstNo=inst_id
+
+	--OPENING CURSOR
+	OPEN @c
+
+	--start fetching 
+	FETCH NEXT FROM @c INTO @inst_id,@title,@count
+	SET @prev_inst_id=@inst_id -- this is used so that we can determine when to print the third col and when not
+	PRINT 'Instructor number: '+ @inst_id +' teaches the following '+ CONVERT(VARCHAR(5),@count) + ' courses:'
+	WHILE @@FETCH_STATUS=0
+	BEGIN
+		IF(@prev_inst_id=@inst_id)
+			PRINT @title
+		ELSE
+		BEGIN
+			SET @prev_inst_id=@inst_id
+			PRINT 'Instructor number: '+ @inst_id +' teaches the following '+ CONVERT(VARCHAR(5),@count)+ ' courses:'
+			PRINT @title
+		END
+		--This is very import otherwise it will enter infinite loop
+		FETCH NEXT FROM @c INTO @inst_id,@title,@count
+	END
+
+
+	
+--Running the sp above
+EXEC displayInstructors
+
+
+--Debugging:
+DROP PROCEDURE displayInstructors
+DROP function dbo.list
+SELECT *
+FROM dbo.list()
+
+
+
+
+
+/*(c) Write a program that for each student tests if he is enrolled in some courses. If he is
+not enrolled in any course, the program should display the message error "Student
+number : .... is not enrolled in any course" and then delete the student. Otherwise, the
+program should display the student number and his enrolled courses.
+Student number: 232411213 is not enrolled in any course
+This student will be removed.
+Student number: 453453453 is enrolled in the following courses:
+Course 1: Introduction to Computer
+Course 2: Advanced databases
+Student number: 888665555 is enrolled in the following courses:
+Course 1: Algebra
+Course 2: XML
+Student number: 987987987 is enrolled in the following courses:
+Course 1: Introduction to Computer
+Course 2: Advanced databases*/
+
+--Fct that will be used in the query that will be used in the Cursor
+CREATE FUNCTION allStudents()
+	RETURNS TABLE
+AS
+	RETURN
+	(
+	SELECT S.StudentNo AS StudentId--,Title
+	FROM Student S
+	LEFT JOIN Take T ON S.StudentNo=T.StudentNo LEFT JOIN Course C ON T.CourseNo=C.CourseNo
+	GROUP BY S.StudentNo
+	)
+
+CREATE PROCEDURE srudentsEnrollTest
+AS
+	DECLARE @c CURSOR
+	DECLARE @st_id INT
+	DECLARE @title VARCHAR(30)
+	DECLARE @count INT
+	DECLARE @prev_st_id INT
+	DECLARE @n INT = 1
+
+	SET @c = CURSOR 
+	FOR
+		WITH getCoursesCounts(st_id, nbr_courses)
+		AS
+			(
+			SELECT StudentNo,COUNT(StudentNo)
+			FROM Take
+			GROUP BY StudentNo
+			)
+
+		SELECT StudentId,Title,nbr_courses
+		FROM dbo.allStudents() 
+		LEFT JOIN Take T ON  StudentId=T.StudentNo 
+		LEFT JOIN Course C ON T.CourseNo=C.CourseNo
+		LEFT JOIN getCoursesCounts ON T.StudentNo=st_id
+
+	--OPEN Cursor:
+	OPEN @c
+
+	FETCH NEXT FROM @c INTO @st_id,@title,@count
+	SET @prev_st_id=@st_id
+	IF(@count IS NOT NULL)
+		PRINT 'Student number: '+ CONVERT(VARCHAR(20),@st_id)+' is enrolled in the following courses:'
+	WHILE @@FETCH_STATUS=0
+	BEGIN
+		IF(@count IS NULL)
+		BEGIN
+			PRINT 'Student number :'+ CONVERT(VARCHAR(20),@st_id) +' is not enrolled in any course'
+			DELETE FROM Student WHERE StudentNo=@st_id
+			SET @n=1
+		END
+		IF(@prev_st_id=@st_id)--HERE THERE MIGHT BE A LOGIC ERROR
+		BEGIN
+			IF(@n<@count)
+			BEGIN
+				PRINT 'Course ' + CONVERT(VARCHAR(5),@n) + ':' +@title
+				SET @n=@n+1
+			END
+			ELSE
+			BEGIN
+				PRINT 'Course ' + CONVERT(VARCHAR(5),@n) + ':' +@title
+				SET @n=1
+			END
+		END
+		ELSE
+		BEGIN
+			SET @prev_st_id=@st_id
+			IF(@n<@count)
+			BEGIN
+				PRINT 'Student number: '+CONVERT(VARCHAR(20),@st_id)+' is enrolled in the following courses:'
+				PRINT 'Course ' + CONVERT(VARCHAR(5),@n) + ':' +@title
+				SET @n=@n+1
+			END
+			ELSE
+			BEGIN
+				PRINT 'Student number: '+ CONVERT(VARCHAR(20),@st_id)+' is enrolled in the following courses:'
+				PRINT 'Course ' + CONVERT(VARCHAR(5),@n) + ':' +@title
+				SET @n=1
+			END
+		END
+		FETCH NEXT FROM @c INTO @st_id,@title,@count
+	END
+
+--Running SP
+EXEC srudentsEnrollTest
+
+--Before Procedure running, lets perpare an insert for testing:
+--INSERT INTO Student VALUES (1220,'Kashmir Denosky','Slovakia',GETDATE(),'2027-02-02 00:00:00.000')
+
+--Debugging:
+--DROP PROCEDURE srudentsEnrollTest
+--DROP FUNCTION allStudents
+
+
+
+
+
+/*(d) Using cursors, write a SP that changes the prefix of computer science code from "Info"
+to "I". For example, "Info216" will be "I216".*/
+
+--So lets first get the courses with prefix 'Info' 
+SELECT CourseNo
+FROM Course 
+WHERE CourseNo LIKE 'Info%'
+
+--Prodecure Declaration:
+CREATE PROCEDURE changeCoursePrefix
+AS
+	DECLARE @c CURSOR 
+	DECLARE @course_id CHAR(7)
+
+	SET @c = CURSOR
+	FOR
+		SELECT CourseNo
+		FROM Course 
+		WHERE CourseNo LIKE 'Info%'
+
+	OPEN @c 
+
+	FETCH NEXT FROM @c INTO @course_id
+	--Do first test
+	WHILE @@FETCH_STATUS=0
+	BEGIN
+		UPDATE Course
+		SET CourseNo= 'I' + SUBSTRING(CourseNo,5,LEN(CourseNo)-4)
+		WHERE CourseNo LIKE 'INFO%'
+		FETCH NEXT FROM @c INTO @course_id
+	END
+	CLOSE @c
+	DEALLOCATE @c
+
+--DROP PROCEDURE changeCoursePrefix
+
+--Running Procedure:
+EXEC changeCoursePrefix
+
+
+
+
+
+/*(e) Create a SP that empties all the tables except a given table.*/
+
+--To empty all tables except a given table we should first get the list of all tables 
+--and we need to take the table name in the param and so test the existence of the following table:
+--if exist -> we do the program else: we don't
+
+--So we can get the list of students through this command:
+SELECT  name
+FROM sys.tables
+
+CREATE FUNCTION tableExistTest(@tableName VARCHAR(40))
+RETURNS INT
+AS
+BEGIN
+    DECLARE @t_name INT
+    SELECT @t_name = COUNT(*) --this will return the nb of occurence of table that is should be deleted
+    FROM sys.tables
+    WHERE name = @tableName
+    RETURN @t_name
+END;
+
+GO
+
+CREATE PROCEDURE clearTablesBut
+    @keepTable VARCHAR(40)
+AS
+BEGIN
+    DECLARE @c CURSOR
+    DECLARE @tableName VARCHAR(40)
+    DECLARE @sql NVARCHAR(MAX)
+
+    -- PRINT dbo.tableList()
+    SET @c = CURSOR FOR
+        SELECT name
+        FROM sys.tables
+        ORDER BY create_date DESC -- this was used to make sure to delete in the correct order, so that you wont delete a table that is referenced
+								  -- but it could show errors in case you create all the table at the same execute (same time)
+								  -- I you encountered an error just run the sp again and it will work
+    OPEN @c
+
+    FETCH NEXT FROM @c INTO @tableName
+    WHILE @@FETCH_STATUS = 0
+    BEGIN
+        IF (dbo.tableExistTest(@tableName) >0  AND  @tableName <> @keepTable)
+        BEGIN
+            SET @sql = 'DROP TABLE ' + QUOTENAME(@tableName)
+            EXEC sp_executesql @sql
+			PRINT 'Table: '+ @tableName+' [ was removed! ]'
+        END
+
+        FETCH NEXT FROM @c INTO @tableName
+    END
+
+    CLOSE @c
+    DEALLOCATE @c
+
+    IF (dbo.tableExistTest(@keepTable) = 1)
+        PRINT 'Table: '+ @keepTable +' was kept successfully.'
+    ELSE
+        PRINT 'Table does not exist. Make sure of the table name. No tables were removed!'
+END;
+
+EXEC clearTablesBut 'Student'
+--DROP FUNCTION tableExistTest
+--DROP PROCEDURE clearTablesBut
